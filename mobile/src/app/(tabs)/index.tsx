@@ -29,6 +29,7 @@ import {
 } from "lucide-react-native";
 import {
   SignifyCamera,
+  hasNativeRecognition,
   type CameraPrediction,
   type CameraStatus,
 } from "../../../modules/signify-camera";
@@ -123,6 +124,12 @@ export default function Translate() {
             ? "Camera access is needed for fingerspelling. You can still type a message."
             : "Camera access is off. Open Settings to allow it, or type a message.",
         );
+        return;
+      }
+      if (!hasNativeRecognition) {
+        setModels({ cnn: "expo-go-preview", hands: "" });
+        alive.current = true;
+        setActive(true);
         return;
       }
       const [cnn, hands] = await Promise.all([
@@ -255,7 +262,9 @@ export default function Translate() {
                   : status === "loading"
                     ? "Getting ready"
                     : live
-                      ? "Camera live"
+                      ? hasNativeRecognition
+                        ? "Camera live"
+                        : "Camera preview"
                       : "Camera off"}
               </Text>
             </View>
@@ -266,7 +275,7 @@ export default function Translate() {
             <View style={[s.corner, s.bottomLeft]} />
             <View style={[s.corner, s.bottomRight]} />
           </View>
-          {(live || demo) && (
+          {((live && hasNativeRecognition) || demo) && (
             <BlurView intensity={45} tint="light" style={s.letterBubble}>
               <Text style={s.letterLabel}>
                 {demo ? "Sample letter" : "Suggested letter"}
@@ -313,7 +322,9 @@ export default function Translate() {
               <View style={s.welcome}>
                 <Text style={s.welcomeTitle}>Your hands.{"\n"}Your voice.</Text>
                 <Text style={s.welcomeDetail}>
-                  A little technology. A lot more understanding.
+                  {hasNativeRecognition
+                    ? "A little technology. A lot more understanding."
+                    : "Expo Go preview. Live recognition needs a Signify development build."}
                 </Text>
               </View>
             ) : (
@@ -322,11 +333,13 @@ export default function Translate() {
                   ? "A preview of fingerspelling."
                   : status === "loading"
                     ? "Getting your camera ready…"
-                    : !hasHand
-                      ? "Raise one hand. We’re ready."
-                      : letter
-                        ? "Hold your sign. Lower your hand to repeat."
-                        : "Face your palm toward the camera in even light."}
+                    : !hasNativeRecognition
+                      ? "Camera preview only. Try the demo or type a message."
+                      : !hasHand
+                        ? "Raise one hand. We’re ready."
+                        : letter
+                          ? "Hold your sign. Lower your hand to repeat."
+                          : "Face your palm toward the camera in even light."}
               </Text>
             )}
             <BlurView intensity={45} tint="light" style={s.dock}>
@@ -440,7 +453,9 @@ export default function Translate() {
           >
             <Info size={12} color={palette.muted} />
             <Text style={s.scopeText}>
-              24 static ASL letters. Review before sharing.
+              {hasNativeRecognition
+                ? "24 static ASL letters. Review before sharing."
+                : "Expo Go preview · recognition needs a development build."}
             </Text>
           </Pressable>
           <Pressable

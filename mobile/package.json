@@ -43,7 +43,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "expo lint",
     "doctor": "expo-doctor",
-    "export": "expo export --platform ios --platform android"
+    "export": "expo export --platform ios --platform android",
+    "go": "expo start --go"
   },
   "private": true
 }

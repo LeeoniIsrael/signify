@@ -2,6 +2,18 @@
 
 The primary Signify app is a native React Native / Expo application. It carries the soft monochrome photography, frosted controls, and calm typography of the browser design into real phone screens. Camera capture, hand tracking, CNN inference, haptics, speech, text inputs, navigation, and storage run through native components.
 
+## Quick preview in Expo Go
+
+Install the current Expo Go app on your phone, connect the phone and computer to the same Wi-Fi, then run:
+
+```sh
+cd mobile
+npm ci
+npm run go -- --port 8083
+```
+
+Scan the terminal QR code with your iPhone camera or Expo Go on Android. This mode supports the native interface, front-camera preview, demo, haptics, typing, speech, and saved phrases. It is clearly labeled as a preview: Expo Go cannot run the custom CNN module, so it never generates or commits camera predictions. Install a Signify development build for real fingerspelling recognition.
+
 ## Local development
 
 Use Node.js 22 LTS (22.13 or newer). Install Xcode and CocoaPods for iOS, or Android Studio, Android SDK 36, and JDK 17+ for Android. Expo SDK 57 requires an appropriate current Xcode version; this project was built with Xcode 27. Keep the whole repository together: Metro imports the tested recognition logic from `../src/lib/recognition.ts`.
