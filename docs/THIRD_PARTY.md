@@ -9,6 +9,7 @@
 - `public/hand-study.png`: new decorative artwork generated for this app with the built-in image generation tool; full prompt in `DESIGN.md`.
 
 - React Native and Expo SDK 57: MIT. The Expo starter's copyright notice is preserved in `mobile/LICENSE`; it applies to the starter code, not to the inherited research model or datasets.
+- React Native WebView 13.16.1: MIT, [React Native WebView](https://github.com/react-native-webview/react-native-webview). Expo Go uses it solely as an isolated, on-device WASM processor. Runtime distributions and license copies are retained in `mobile/assets/vision/`.
 - Apple Vision / AVFoundation / Core Image: Apple platform frameworks. Android CameraX: Apache-2.0.
 - The native app bundles Manrope through `@expo-google-fonts/manrope` (SIL Open Font License), and uses the same decorative hand study and upstream alphabet chart as the browser.
 

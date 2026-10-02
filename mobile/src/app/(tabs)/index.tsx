@@ -18,7 +18,7 @@ import { Asset } from "expo-asset";
 import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
 import {
-  ArrowUpRight,
+  Pencil,
   Camera,
   Hand,
   Info,
@@ -26,6 +26,7 @@ import {
   ShieldCheck,
   Square,
   Volume2,
+  Maximize2,
 } from "lucide-react-native";
 import {
   SignifyCamera,
@@ -51,7 +52,6 @@ export default function Translate() {
     message,
     setMessage,
     feedback,
-    notify,
     speak,
     speaking,
     preferences,
@@ -67,7 +67,7 @@ export default function Translate() {
   const [letter, setLetter] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [hasHand, setHasHand] = useState(false);
-  const [demo, setDemo] = useState(false);
+  const [engineMessage, setEngineMessage] = useState("Loading recognition…");
   const generation = useRef(0);
   const gate = useRef(new StabilityGate());
   const alive = useRef(false);
@@ -76,7 +76,7 @@ export default function Translate() {
     generation.current++;
     alive.current = false;
     setActive(false);
-    setDemo(false);
+    setHasHand(false);
     setStatus("off");
     setLetter(null);
     setProgress(0);
@@ -89,27 +89,11 @@ export default function Translate() {
     });
     return () => subscription.remove();
   }, [stop]);
-  useEffect(() => {
-    if (!demo) return;
-    let i = 0;
-    const sample = "HELLO";
-    const id = setInterval(() => {
-      i++;
-      if (i === sample.length) {
-        stop();
-        notify("Demo complete. Try your camera on a real phone.");
-      } else {
-        setLetter(sample[i]);
-        setProgress((i + 1) / sample.length);
-        feedback();
-      }
-    }, 1000);
-    return () => clearInterval(id);
-  }, [demo, stop, notify, feedback]);
   const start = async () => {
     stop();
     setError("");
     setStatus("loading");
+    setEngineMessage("Getting your camera ready…");
     feedback();
     const run = generation.current;
     try {
@@ -127,7 +111,7 @@ export default function Translate() {
         return;
       }
       if (!hasNativeRecognition) {
-        setModels({ cnn: "expo-go-preview", hands: "" });
+        setModels({ cnn: "expo-go-recognition", hands: "" });
         alive.current = true;
         setActive(true);
         return;
@@ -185,7 +169,10 @@ export default function Translate() {
     if (value.state === "error") {
       stop();
       setError(value.message || "The camera is unavailable.");
-    } else setStatus(value.state);
+    } else {
+      setStatus(value.state);
+      if (value.message) setEngineMessage(value.message);
+    }
   };
   const live = active && focused;
   return (
@@ -207,9 +194,12 @@ export default function Translate() {
           </IconButton>
         </View>
         <View style={s.intro}>
-          <Label>Human connection, in every form.</Label>
+          <Label>Your hands. Your words.</Label>
           <Text accessibilityRole="header" style={s.title}>
-            A little less distance.
+            Sign to text.
+          </Text>
+          <Text style={s.subtitle}>
+            Spell a message with ASL. Speak it or show it.
           </Text>
         </View>
         <View style={[s.camera, { minHeight: height < 740 ? 285 : 335 }]}>
@@ -257,15 +247,11 @@ export default function Translate() {
                 ]}
               />
               <Text style={s.pillText}>
-                {demo
-                  ? "Demo"
-                  : status === "loading"
-                    ? "Getting ready"
-                    : live
-                      ? hasNativeRecognition
-                        ? "Camera live"
-                        : "Camera preview"
-                      : "Camera off"}
+                {status === "loading"
+                  ? "Getting ready"
+                  : live
+                    ? "Recognizing"
+                    : "Camera off"}
               </Text>
             </View>
           </View>
@@ -275,11 +261,9 @@ export default function Translate() {
             <View style={[s.corner, s.bottomLeft]} />
             <View style={[s.corner, s.bottomRight]} />
           </View>
-          {((live && hasNativeRecognition) || demo) && (
+          {live && status !== "loading" && (
             <BlurView intensity={45} tint="light" style={s.letterBubble}>
-              <Text style={s.letterLabel}>
-                {demo ? "Sample letter" : "Suggested letter"}
-              </Text>
+              <Text style={s.letterLabel}>Suggested letter</Text>
               <Text style={s.letter}>{letter || "—"}</Text>
               <View
                 accessibilityRole="progressbar"
@@ -300,7 +284,7 @@ export default function Translate() {
                 />
               </View>
               <Text style={s.letterLabel}>
-                {demo ? "Preview only" : "Hold to add"}
+                {progress === 1 ? "Added ✓" : "Hold to add"}
               </Text>
             </BlurView>
           )}
@@ -318,28 +302,27 @@ export default function Translate() {
                     />
                   )}
               </View>
-            ) : !live && !demo && status === "off" ? (
+            ) : !live && status === "off" ? (
               <View style={s.welcome}>
-                <Text style={s.welcomeTitle}>Your hands.{"\n"}Your voice.</Text>
+                <Text style={s.welcomeTitle}>
+                  Make a sign.{"\n"}Make a connection.
+                </Text>
                 <Text style={s.welcomeDetail}>
-                  {hasNativeRecognition
-                    ? "A little technology. A lot more understanding."
-                    : "Expo Go preview. Live recognition needs a Signify development build."}
+                  Start the camera. Hold one ASL letter until it’s added to your
+                  message.
                 </Text>
               </View>
             ) : (
               <Text accessibilityLiveRegion="polite" style={s.guidance}>
-                {demo
-                  ? "A preview of fingerspelling."
-                  : status === "loading"
-                    ? "Getting your camera ready…"
-                    : !hasNativeRecognition
-                      ? "Camera preview only. Try the demo or type a message."
-                      : !hasHand
-                        ? "Raise one hand. We’re ready."
-                        : letter
-                          ? "Hold your sign. Lower your hand to repeat."
-                          : "Face your palm toward the camera in even light."}
+                {status === "loading"
+                  ? engineMessage
+                  : !hasHand
+                    ? "Bring one hand into the frame, with your palm facing the camera."
+                    : letter
+                      ? progress === 1
+                        ? "Letter added. Make the next sign, or lower your hand to repeat."
+                        : `Hold ${letter} steady until the bar fills.`
+                      : "Hand found. Use an ASL letter and hold it steady in even light."}
               </Text>
             )}
             <BlurView intensity={45} tint="light" style={s.dock}>
@@ -350,22 +333,20 @@ export default function Translate() {
               <Action
                 testID="camera-toggle"
                 title={
-                  demo
-                    ? "Stop demo"
-                    : active
-                      ? "Stop camera"
-                      : status === "loading"
-                        ? "Cancel"
-                        : "Start camera"
+                  active
+                    ? "Stop translating"
+                    : status === "loading"
+                      ? "Cancel"
+                      : "Start translating"
                 }
                 icon={
-                  active || demo ? (
+                  active ? (
                     <Square size={16} color="white" />
                   ) : (
                     <Camera size={17} color="white" />
                   )
                 }
-                onPress={active || demo || status === "loading" ? stop : start}
+                onPress={active || status === "loading" ? stop : start}
                 style={{ minHeight: 49, paddingHorizontal: 18 }}
               />
             </BlurView>
@@ -392,7 +373,7 @@ export default function Translate() {
               accessibilityLiveRegion="polite"
               style={[s.message, preferences.largeText && { fontSize: 25 }]}
             >
-              {message || "Every conversation starts with a hello…"}
+              {message || "Your signed letters will appear here."}
             </Text>
           </View>
           <IconButton
@@ -402,7 +383,7 @@ export default function Translate() {
               router.push("/conversation");
             }}
           >
-            <ArrowUpRight size={20} color={palette.ink} />
+            <Pencil size={20} color={palette.ink} />
           </IconButton>
         </View>
         <View style={s.quickControls}>
@@ -424,6 +405,24 @@ export default function Translate() {
           >
             <Text style={[s.controlText, !message && { opacity: 0.45 }]}>
               Delete
+            </Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Show message full screen"
+            disabled={!message.trim()}
+            onPress={() => {
+              stop();
+              router.push("/present");
+            }}
+            style={s.smallControl}
+          >
+            <Maximize2
+              size={16}
+              color={!message.trim() ? palette.muted : palette.ink}
+            />
+            <Text style={[s.controlText, !message.trim() && { opacity: 0.45 }]}>
+              Show
             </Text>
           </Pressable>
           <Pressable
@@ -453,23 +452,8 @@ export default function Translate() {
           >
             <Info size={12} color={palette.muted} />
             <Text style={s.scopeText}>
-              {hasNativeRecognition
-                ? "24 static ASL letters. Review before sharing."
-                : "Expo Go preview · recognition needs a development build."}
+              ASL letters A–Y, except J. Type J & Z. Review before sharing.
             </Text>
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => {
-              stop();
-              setError("");
-              setLetter("H");
-              setProgress(0.2);
-              setDemo(true);
-            }}
-            style={s.demo}
-          >
-            <Text style={s.demoText}>Try demo</Text>
           </Pressable>
         </View>
       </ScrollView>
@@ -494,6 +478,12 @@ const s = StyleSheet.create({
     paddingBottom: 20,
   },
   intro: { gap: 5, paddingBottom: 22 },
+  subtitle: {
+    fontFamily: type.regular,
+    fontSize: 13,
+    lineHeight: 20,
+    color: palette.muted,
+  },
   title: {
     fontFamily: type.medium,
     fontSize: 32,
@@ -579,15 +569,15 @@ const s = StyleSheet.create({
   welcome: { paddingHorizontal: 9, gap: 10 },
   welcomeTitle: {
     fontFamily: type.regular,
-    fontSize: 38,
+    fontSize: 31,
     letterSpacing: -1.8,
-    lineHeight: 40,
+    lineHeight: 35,
     color: "white",
   },
   welcomeDetail: {
     fontFamily: type.regular,
-    fontSize: 10,
-    lineHeight: 17,
+    fontSize: 12,
+    lineHeight: 18,
     color: "#EDF3E7",
   },
   dock: {
@@ -690,7 +680,7 @@ const s = StyleSheet.create({
     paddingHorizontal: 12,
     justifyContent: "center",
     alignItems: "center",
-    minHeight: 42,
+    minHeight: 44,
   },
   controlText: { fontFamily: type.medium, fontSize: 11, color: palette.ink },
   scope: {
@@ -706,7 +696,7 @@ const s = StyleSheet.create({
     gap: 4,
     minHeight: 30,
   },
-  scopeText: { fontFamily: type.regular, fontSize: 8, color: palette.muted },
+  scopeText: { fontFamily: type.regular, fontSize: 10, color: palette.muted },
   demo: { paddingLeft: 10, minHeight: 30, justifyContent: "center" },
   demoText: { fontFamily: type.semi, fontSize: 10, color: palette.muted },
 });

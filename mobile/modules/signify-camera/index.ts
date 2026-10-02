@@ -2,14 +2,15 @@ import {
   requireNativeViewManager,
   requireOptionalNativeModule,
 } from "expo-modules-core";
-import { CameraView } from "expo-camera";
-import { createElement } from "react";
 import type { ComponentType } from "react";
 import type { ViewProps } from "react-native";
 export type CameraPrediction = {
   logits: number[];
   hasHand: boolean;
   latencyMs: number;
+  landmarks?: { x: number; y: number; z: number }[];
+  width?: number;
+  height?: number;
 };
 export type CameraStatus = {
   state: "loading" | "live" | "error";
@@ -25,24 +26,8 @@ export type Props = ViewProps & {
 export const hasNativeRecognition =
   !!requireOptionalNativeModule("SignifyCamera");
 
-function ExpoGoPreview({ style, active, onStatus }: Props) {
-  return createElement(CameraView, {
-    style,
-    facing: "front",
-    active,
-    onCameraReady: () => onStatus({ nativeEvent: { state: "live" } }),
-    onMountError: () =>
-      onStatus({
-        nativeEvent: {
-          state: "error",
-          message:
-            "The camera preview is unavailable. You can still type a message.",
-        },
-      }),
-  });
-}
-
-// Expo Go cannot include our custom CNN module. Its preview never emits predictions.
+// Lazy-load the Expo Go processor; installed native builds use the streaming native module.
 export const SignifyCamera: ComponentType<Props> = hasNativeRecognition
   ? (requireNativeViewManager("SignifyCamera") as ComponentType<Props>)
-  : ExpoGoPreview;
+  : // eslint-disable-next-line @typescript-eslint/no-require-imports
+    require("./ExpoCameraEngine").default;

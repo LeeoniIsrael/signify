@@ -15,7 +15,7 @@ npm run ios          # iOS simulator or connected iPhone
 # or: npm run android
 ```
 
-This is a native app with its own Swift/Kotlin camera and ONNX module. It requires a development build; Expo Go does not include that module. For a physical iPhone, use `npx expo run:ios --device` and an Apple development signing team. [Mobile setup, build profiles, and verification](mobile/README.md) cover both platforms.
+For quick phone testing, run `npm run go -- --port 8083` in `mobile/` and scan the QR with Expo Go. Native Expo Camera feeds an on-device MediaPipe/ONNX processor for real static ASL fingerspelling. Installed Signify builds use the Swift/Kotlin streaming camera and ONNX module. For a native development build on a physical iPhone, use `npx expo run:ios --device` and an Apple development signing team. [Mobile setup, build profiles, and verification](mobile/README.md) cover both platforms.
 
 The mobile app includes native camera processing, native haptics with visual confirmation, editable two-way conversations, text-to-speech, full-screen messages, saved phrases, and accessibility preferences. Models and fonts are bundled into the installed app. It uses the same tested class mapping and letter stability gate as the web companion. No API key or inference server is required.
 

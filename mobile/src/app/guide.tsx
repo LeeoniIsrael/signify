@@ -73,9 +73,10 @@ export default function Guide() {
           for critical conversations.
         </Text>
         <Text style={[s.body, { marginTop: 15 }]}>
-          Video is processed on this phone and is never recorded or uploaded.
-          Saved phrases stay in local storage. Your keyboard’s dictation and
-          installed speech voices follow your phone’s speech-service settings.
+          Camera frames are processed on this phone and never uploaded.
+          Temporary camera snapshots are deleted immediately. Saved phrases stay
+          in local storage. Your keyboard’s dictation and installed speech
+          voices follow your phone’s speech-service settings.
         </Text>
       </ScrollView>
     </SafeAreaView>

@@ -24,3 +24,9 @@ The inherited CNN recognizes 24 static ASL letters. These checks do not establis
 ## Dependency follow-up
 
 The SDK 57 dependency tree currently reports npm advisories in inherited development/configuration dependencies (`node-forge`, `uuid`) and the router's `decode-uri-component` chain. The audit's proposed major downgrades to Expo 44 / Router 5 were not applied because they are incompatible with this app. Reassess these upstream dependencies before a public release. Package versions are pinned by `mobile/package-lock.json`.
+
+## Expo Go recognition update
+
+The Expo Go preview fallback has been replaced with an on-device MediaPipe/ONNX WASM processor fed by native Expo Camera snapshots. The main flow now says Sign to text, explains holding letters, and exposes message editing, spaces, deletion, speech, and full-screen presentation. The timer-only demo was removed.
+
+The actual packaged processor passed integration checks in Chromium and WebKit: bundled models initialize, blank frames yield no hand or logits, a hand photograph yields 21 landmarks and 25 finite CNN outputs, and no HTTP requests occur during inference. Mobile lint, TypeScript, and iOS/Android production JS export passed. This tests the inference processor; physical Expo Go camera performance, recognition accuracy, and haptics remain unverified. The Mac was locked during this update, preventing a simulator UI check. These limits are separate from the earlier native build checks above.

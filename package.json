@@ -11,7 +11,9 @@
     "test:e2e": "playwright test",
     "postinstall": "node scripts/prepare-assets.mjs",
     "format": "prettier --write src tests scripts *.ts *.json *.html docs README.md .github/workflows",
-    "format:check": "prettier --check src tests scripts *.ts *.json *.html docs README.md .github/workflows"
+    "format:check": "prettier --check src tests scripts *.ts *.json *.html docs README.md .github/workflows",
+    "build:mobile-vision": "node scripts/build-mobile-vision.mjs",
+    "test:mobile-vision": "node scripts/test-mobile-vision.mjs"
   },
   "dependencies": {
     "@fontsource/dm-sans": "^5.3.0",
