@@ -1,0 +1,39 @@
+{
+  "name": "signify",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "postinstall": "node scripts/prepare-assets.mjs",
+    "format": "prettier --write src tests scripts *.ts *.json *.html docs README.md .github/workflows",
+    "format:check": "prettier --check src tests scripts *.ts *.json *.html docs README.md .github/workflows"
+  },
+  "dependencies": {
+    "@fontsource/dm-sans": "^5.3.0",
+    "@fontsource/manrope": "^5.3.0",
+    "@mediapipe/tasks-vision": "0.10.32",
+    "lucide-react": "^0.468.0",
+    "onnxruntime-web": "1.24.3",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@playwright/test": "^1.58.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "prettier": "^3.9.9",
+    "typescript": "~5.7.2",
+    "vite": "^6.4.0",
+    "vitest": "^4.1.11"
+  },
+  "engines": {
+    "node": "^22.0.0 || >=24.0.0"
+  }
+}

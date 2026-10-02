@@ -2,3 +2,12 @@ __pycache__
 myenv/
 .venv
 venv/
+node_modules/
+dist/
+public/vendor/
+public/models/signlanguage.onnx
+public/asl-chart.jpg
+playwright-report/
+test-results/
+*.tsbuildinfo
+.DS_Store
