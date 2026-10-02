@@ -2,9 +2,24 @@
 
 **A little less distance.** A camera-assisted fingerspelling and conversation app with a quiet glass interface, local AI, editable text, and speech.
 
-This repository preserves the history, trained CNN, datasets, and original Flask prototype from [LeeoniIsrael/sign-language-interpreter](https://github.com/LeeoniIsrael/sign-language-interpreter), originally forked from [sonialiao/SEO_FinalProject](https://github.com/sonialiao/SEO_FinalProject). The modern browser app lives in `src/`. The original project description is preserved in [docs/ORIGINAL_README.md](docs/ORIGINAL_README.md).
+This repository preserves the history, trained CNN, datasets, and original Flask prototype from [LeeoniIsrael/sign-language-interpreter](https://github.com/LeeoniIsrael/sign-language-interpreter), originally forked from [sonialiao/SEO_FinalProject](https://github.com/sonialiao/SEO_FinalProject). **The primary product is the native iOS and Android app in [`mobile/`](mobile/README.md), built with React Native and Expo.** The browser companion lives in `src/`. The original project description is preserved in [docs/ORIGINAL_README.md](docs/ORIGINAL_README.md).
 
-## Run
+## Run the mobile app
+
+Use Node.js 22 LTS, Xcode for iOS, or Android Studio/JDK 17+ for Android.
+
+```sh
+cd mobile
+npm ci
+npm run ios          # iOS simulator or connected iPhone
+# or: npm run android
+```
+
+This is a native app with its own Swift/Kotlin camera and ONNX module. It requires a development build; Expo Go does not include that module. For a physical iPhone, use `npx expo run:ios --device` and an Apple development signing team. [Mobile setup, build profiles, and verification](mobile/README.md) cover both platforms.
+
+The mobile app includes native camera processing, native haptics with visual confirmation, editable two-way conversations, text-to-speech, full-screen messages, saved phrases, and accessibility preferences. Models and fonts are bundled into the installed app. It uses the same tested class mapping and letter stability gate as the web companion. No API key or inference server is required.
+
+## Run the browser companion
 
 Use Node.js 22 LTS (see `.nvmrc`). No Python server, account, or API key is needed for the modern app.
 
@@ -17,7 +32,7 @@ Open http://localhost:5173. Camera access requires **HTTPS or localhost**. To te
 
 `npm ci` copies the pinned MediaPipe/ONNX runtime files, original CNN, and reference chart into public assets. Hand-tracking weights are checked in. Runtime model inference and fonts are served from the same origin; no third-party CDN is required at runtime. Initial camera startup downloads approximately 30 MB of model and runtime resources from the app's host, cached normally by the browser.
 
-## What works
+## Browser features
 
 - Your device camera → MediaPipe hand landmarks → bounded hand crop → 28×28 grayscale and original normalization → the inherited ONNX CNN.
 - 24 static ASL letters, uncertainty rejection, an 850 ms stability window, and release-to-repeat capture. A hand release of at least 450 ms lets you enter a repeated letter.
@@ -41,7 +56,7 @@ Camera frames are neither uploaded nor recorded. Conversation text stays in memo
 
 Live captions depend on the browser's SpeechRecognition API and may send audio to that browser's provider. Text-to-speech uses the browser's configured voice; availability and local versus service-backed voices vary by device. Neither captions nor vibration is supported everywhere. Safari/iOS commonly lack web vibration; visual feedback remains available. Typing and presenting text remain usable without camera, microphone, or speech support.
 
-## Verify
+## Verify the browser companion
 
 ```sh
 npm test
@@ -55,6 +70,10 @@ For an existing Google Chrome installation: `PLAYWRIGHT_CHANNEL=chrome npm run t
 Tests cover model label safety, normalization, capture stability, uncertainty, repeats, real ONNX inference on a held-out sample, the full MediaPipe/CNN pipeline using a synthetic camera stream, camera denial and stopping, message display/editing, saved phrases, responsive overflow, and automated accessibility checks. Physical camera accuracy, tactile feedback on a phone, and live microphone recognition still require device testing.
 
 ## Project map
+
+- `mobile/src/app/`: native Expo Router screens.
+- `mobile/modules/signify-camera/`: Swift and Kotlin camera/hand-tracking/ONNX module.
+- `mobile/README.md`: native setup, build profiles, and device validation.
 
 - `src/App.tsx`: conversation interface and camera/speech lifecycle.
 - `src/lib/engine.ts`: local hand detection and ONNX inference.

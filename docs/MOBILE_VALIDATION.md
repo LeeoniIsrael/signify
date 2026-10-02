@@ -1,0 +1,26 @@
+# Native mobile validation
+
+Recorded for the React Native / Expo mobile implementation on October 2, 2026.
+
+## Passed checks
+
+- Expo SDK 57 dependency/configuration diagnostic: all 18 checks passed.
+- Mobile ESLint and TypeScript checks: passed.
+- iOS and Android production JavaScript export: passed; model weights, Manrope fonts, alphabet chart, and decorative photography are included.
+- Shared classifier/stability tests: all five tests passed. Browser companion production build also passed.
+- iOS native Debug and Release simulator builds with Xcode 27, arm64, signing disabled: passed. The Swift camera module and native ONNX Runtime were compiled and linked.
+- Android native Debug APK, arm64-v8a: passed with Gradle 9.3.1 / Android SDK 36. The Kotlin camera module and CameraX/MediaPipe/ONNX dependencies compiled and linked. Android runtime UI and physical-camera checks were not performed.
+- iPhone 17 Pro / iOS 26 simulator: release build installed and opened without Metro. Camera startup loaded the bundled CNN and returned the expected real-phone-required message rather than a model-load error.
+- Native interface checks: labeled preview demo; phrase selection into a conversation; native keyboard editing; navigation dock hidden while typing; full-screen presentation; clear and undo restored the exact prior message; explicit phrase saving and persistence across app restart.
+
+The simulator preview is a locally installed app, not a browser or embedded website. No store submission, signing registration, or cloud build was performed.
+
+## Physical-device validation still required
+
+A simulator cannot establish camera accuracy, real-world latency, battery impact, or tactile feedback. Evaluate the front-camera pipeline separately on iPhone and Android with Deaf signers, including handedness, skin tones, hand shapes, lighting, backgrounds, and camera orientation. Test repeat letters, uncertain signs, denied camera access, interruptions/backgrounding, speech availability, haptics enabled/disabled, system text scaling, and screen-reader navigation.
+
+The inherited CNN recognizes 24 static ASL letters. These checks do not establish continuous sign-language translation or clinical suitability. See the [model card](MODEL_CARD.md).
+
+## Dependency follow-up
+
+The SDK 57 dependency tree currently reports npm advisories in inherited development/configuration dependencies (`node-forge`, `uuid`) and the router's `decode-uri-component` chain. The audit's proposed major downgrades to Expo 44 / Router 5 were not applied because they are incompatible with this app. Reassess these upstream dependencies before a public release. Package versions are pinned by `mobile/package-lock.json`.
