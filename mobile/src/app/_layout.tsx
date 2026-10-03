@@ -9,7 +9,7 @@ import {
 } from "@expo-google-fonts/manrope";
 import { ActivityIndicator, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { SessionProvider } from "../lib/session";
+import { SessionProvider } from "../lib/SessionProvider";
 import { Toast, palette } from "../components/ui";
 export default function RootLayout() {
   const [loaded, error] = useFonts({

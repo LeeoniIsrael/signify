@@ -1,12 +1,4 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, AppState, Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
@@ -23,7 +15,7 @@ const initialPreferences: Preferences = {
   largeText: false,
   highContrast: false,
 };
-function useSessionState() {
+export function useSessionState() {
   const [message, setMessage] = useState("");
   const [reply, setReply] = useState("");
   const [preferences, setPreferences] = useState(initialPreferences);
@@ -203,18 +195,4 @@ function useSessionState() {
     clearMessage,
     reducedMotion,
   };
-}
-const SessionContext = createContext<ReturnType<typeof useSessionState> | null>(
-  null,
-);
-export function SessionProvider({ children }: { children: ReactNode }) {
-  const value = useSessionState();
-  return (
-    <SessionContext.Provider value={value}>{children}</SessionContext.Provider>
-  );
-}
-export function useSession() {
-  const value = useContext(SessionContext);
-  if (!value) throw new Error("SessionProvider missing");
-  return value;
 }

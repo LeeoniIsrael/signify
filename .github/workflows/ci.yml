@@ -12,6 +12,7 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      - run: npm ci --prefix mobile
       - run: npm test
       - run: npm run build
       - run: npx playwright install --with-deps chromium webkit
