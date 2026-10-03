@@ -42,30 +42,59 @@ export class StabilityGate {
   private since = 0;
   private last: string | null = null;
   private absentSince: number | null = null;
+  private samples = 0;
+  private previousTime: number | null = null;
+  constructor(
+    private options: {
+      holdMs?: number;
+      releaseMs?: number;
+      minSamples?: number;
+      maxGapMs?: number;
+    } = {},
+  ) {}
   reset() {
     this.candidate = null;
     this.since = 0;
     this.last = null;
     this.absentSince = null;
+    this.samples = 0;
+    this.previousTime = null;
   }
   update(
     letter: string | null,
     now: number,
     hasHand = true,
   ): { committed: string | null; progress: number } {
+    if (
+      this.previousTime !== null &&
+      now - this.previousTime > (this.options.maxGapMs ?? Infinity)
+    ) {
+      this.candidate = null;
+      this.samples = 0;
+      this.absentSince = null;
+    }
+    this.previousTime = now;
     if (!hasHand) {
       this.absentSince ??= now;
-      if (now - this.absentSince >= 450) this.last = null;
+      if (now - this.absentSince >= (this.options.releaseMs ?? 450))
+        this.last = null;
     } else this.absentSince = null;
     if (!letter) {
       this.candidate = null;
+      this.samples = 0;
       return { committed: null, progress: 0 };
     }
     if (letter !== this.candidate) {
       this.candidate = letter;
       this.since = now;
+      this.samples = 0;
     }
-    const progress = Math.min(1, (now - this.since) / 850);
+    this.samples++;
+    const progress = Math.min(
+      1,
+      (now - this.since) / (this.options.holdMs ?? 850),
+      this.samples / (this.options.minSamples ?? 1),
+    );
     if (progress === 1 && letter !== this.last) {
       this.last = letter;
       return { committed: letter, progress };

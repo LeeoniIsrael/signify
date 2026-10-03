@@ -68,7 +68,7 @@ final class SignifyCameraView: ExpoView, AVCaptureVideoDataOutputSampleBufferDel
     do {
       if !configured {
         guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front) else {
-          fail("A real phone is needed for the camera. You can explore the demo or type a message here."); return
+          fail("A real phone is needed for the camera. You can type a message here."); return
         }
         capture.beginConfiguration()
         capture.sessionPreset = .vga640x480
@@ -100,7 +100,7 @@ final class SignifyCameraView: ExpoView, AVCaptureVideoDataOutputSampleBufferDel
   }
   func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
     let now = CACurrentMediaTime()
-    guard requestedActive, now - lastFrameTime >= 0.13, let model,
+    guard requestedActive, now - lastFrameTime >= 0.083, let model,
           let buffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
     lastFrameTime = now
     autoreleasepool {
@@ -131,13 +131,19 @@ final class SignifyCameraView: ExpoView, AVCaptureVideoDataOutputSampleBufferDel
         guard let value = values.values.first else { return }
         let result = try value.tensorData() as Data
         let logits = result.withUnsafeBytes { Array($0.bindMemory(to: Float.self)) }
-        emitPrediction(logits, true, now)
+        let order: [VNHumanHandPoseObservation.JointName] = [.wrist, .thumbCMC, .thumbMP, .thumbIP, .thumbTip, .indexMCP, .indexPIP, .indexDIP, .indexTip, .middleMCP, .middlePIP, .middleDIP, .middleTip, .ringMCP, .ringPIP, .ringDIP, .ringTip, .littleMCP, .littlePIP, .littleDIP, .littleTip]
+        let joints = try order.compactMap { name -> [String: Double]? in
+          let point = try observation.recognizedPoint(name)
+          guard point.confidence > 0.3 else { return nil }
+          return ["x": Double(point.location.x), "y": Double(1 - point.location.y), "z": 0]
+        }
+        emitPrediction(logits, true, now, joints, Double(w), Double(h))
       } catch { fail("Recognition paused. Your message is safe. Try the camera again.") }
     }
   }
-  private func emitPrediction(_ logits: [Float], _ hasHand: Bool, _ started: Double) {
+  private func emitPrediction(_ logits: [Float], _ hasHand: Bool, _ started: Double, _ landmarks: [[String: Double]] = [], _ width: Double = 0, _ height: Double = 0) {
     let elapsed = (CACurrentMediaTime() - started) * 1000
-    DispatchQueue.main.async { [weak self] in self?.onPrediction(["logits": logits.map { Double($0) }, "hasHand": hasHand, "latencyMs": elapsed]) }
+    DispatchQueue.main.async { [weak self] in self?.onPrediction(["logits": logits.map { Double($0) }, "hasHand": hasHand, "latencyMs": elapsed, "landmarks": landmarks, "width": width, "height": height]) }
   }
   private func emitStatus(_ state: String, _ message: String = "") {
     DispatchQueue.main.async { [weak self] in self?.onStatus(["state": state, "message": message]) }

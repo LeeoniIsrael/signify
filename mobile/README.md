@@ -1,6 +1,6 @@
 # Signify for iOS and Android
 
-The primary Signify app is a native React Native / Expo application. It carries the soft monochrome photography, frosted controls, and calm typography of the browser design into real phone screens. Camera capture, haptics, speech, text inputs, navigation, and storage use native components. Hand tracking and CNN inference run on-device in both Expo Go and installed native builds.
+The primary Signify app is a native React Native / Expo application. It carries the soft monochrome photography, frosted controls, and calm typography of the browser design into real phone screens. Haptics, speech, text inputs, navigation, and storage use native components. The camera fills the translation screen, with floating message controls and an overlay driven by detected hand joints. Hand tracking and CNN inference run on-device in both Expo Go and installed native builds.
 
 ## Test recognition in Expo Go
 
@@ -14,7 +14,7 @@ npm run go -- --port 8083
 
 Scan the terminal QR code with your iPhone camera or Expo Go on Android. Tap **Start translating**, allow camera access, and wait for the bundled models to load (the first development launch downloads about 32 MB from your computer). Face your palm toward the front camera and hold one static ASL letter until the bar fills. Accepted letters build your message with visible and haptic confirmation. Lower your hand briefly to repeat a letter; use Space between words. Edit errors in Conversation, then Speak or Show your message. J and Z must be typed. This is experimental fingerspelling, not full signed-sentence translation.
 
-Expo Go uses native Expo Camera with serial JPEG snapshots, MediaPipe Hand Landmarker, and the original CNN in an isolated, invisible on-device WASM processor. All runtime files and weights are bundled locally; inference never contacts a server. One frame is processed at a time, with a 150 ms gap after completion. The processor has no UI or camera access. A Signify development/release build uses the faster native streaming module instead.
+Expo Go uses continuous front-camera video inside a local WebView, with MediaPipe Hand Landmarker and the original CNN running on-device. All runtime files and weights are bundled; inference never contacts a server. Fresh frames are processed serially at a target of 12 samples per second, without JPEG capture or image transfer across the native bridge. Pause closes camera tracks and keeps the models warm for resume. If continuous camera access is unavailable, native Expo Camera supplies serial snapshots without an added delay. Installed Signify builds use the Swift/Kotlin streaming module.
 
 ## Local development
 
@@ -57,17 +57,17 @@ The Android preview profile creates an APK; iOS distribution needs Apple signing
 
 ## Recognition and UX
 
-- Explicit camera start, local front-camera preview, hold progress, suggested letters, and clear stop/retry states.
-- Expo Go: Expo Camera → on-device MediaPipe hand landmarks → cropped pixels → ONNX Runtime WASM. All weights and runtimes are included.
+- Explicit camera start, full-screen front-camera preview, actual hand-joint overlays, a restrained scanning animation, hold progress, and clear pause/retry states. Reduced motion keeps the overlay static.
+- Expo Go: continuous local camera video → on-device MediaPipe hand landmarks → cropped pixels → ONNX Runtime WASM. All weights and runtimes are included. Framing and movement guidance helps users hold a usable sign.
 - Native iOS: AVFoundation → Apple Vision hand joints → cropped pixels → native ONNX Runtime. Android: CameraX → MediaPipe hand landmarks → cropped pixels → native ONNX Runtime.
-- The original 24-letter static ASL CNN, confidence rejection, 850 ms hold, and 450 ms hand release for repeats. J and Z must be typed. This is experimental fingerspelling, not continuous signed-language translation.
+- The original 24-letter static ASL CNN, confidence rejection, agreement across recent predictions, a 550 ms hold with at least three samples, and 300 ms hand release for repeats. J and Z must be typed. This is experimental fingerspelling, not continuous signed-language translation.
 - Native haptic selection/capture feedback with an off switch. Hardware/OS settings, low-power mode, and active camera capture can suppress vibrations, especially on iOS; visible confirmation remains available.
 - Editable messages, native speech, clipboard copy, full-screen presentation, two-way typing, built-in phrase categories, personal phrases, and undo after clear/replacement.
 - Screen-reader labels, native font scaling, an additional large-message setting, stronger card outlines, minimum touch targets, reduced-motion support, safe areas, scrolling on small screens, and a dock that hides while typing.
 
 ## Privacy
 
-Camera frames stay on the phone and are never uploaded. Expo Go temporarily writes each camera snapshot to the app cache and deletes it immediately after reading; the in-memory JPEG is passed only to the isolated local processor. No recording or snapshot history is kept. Current message/reply text lives in memory and clears when the app process ends. Backgrounding stops capture and speech. Explicitly saved phrases and preferences use local AsyncStorage; device backups may include this app data. Saved phrases are not encrypted by the app, so avoid saving sensitive text on a shared device.
+Camera frames stay on the phone and are never uploaded. The continuous Expo Go path creates no snapshot files. Its fallback temporarily writes each native camera snapshot to the app cache and deletes it immediately after reading; the in-memory JPEG goes only to the local processor. No recording or snapshot history is kept. Current message/reply text lives in memory and clears when the app process ends. Backgrounding stops capture and speech. Explicitly saved phrases and preferences use local AsyncStorage; device backups may include this app data. Saved phrases are not encrypted by the app, so avoid saving sensitive text on a shared device.
 
 Text-to-speech uses the device's configured speech engine. Keyboard dictation is provided by the OS/keyboard and follows that provider's privacy settings. Signify does not request microphone permission or implement a separate audio-upload service. Model/font assets are packaged with release builds; development builds fetch assets from Metro during development.
 

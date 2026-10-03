@@ -5,28 +5,28 @@ import {
   ImageBackground,
   Linking,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
   useWindowDimensions,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router, useFocusEffect, useIsFocused } from "expo-router";
 import { useCameraPermissions } from "expo-camera";
 import { Asset } from "expo-asset";
 import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
+import { StatusBar } from "expo-status-bar";
 import {
   Pencil,
   Camera,
   Hand,
-  Info,
   Settings2,
-  ShieldCheck,
   Square,
   Volume2,
   Maximize2,
+  Delete,
+  BookOpen,
 } from "lucide-react-native";
 import {
   SignifyCamera,
@@ -34,20 +34,16 @@ import {
   type CameraPrediction,
   type CameraStatus,
 } from "../../../modules/signify-camera";
-import { classify, StabilityGate } from "../../../../src/lib/recognition";
+import { StabilityGate } from "../../../../src/lib/recognition";
+import { LetterConsensus } from "../../lib/live-recognition";
 import { useSession } from "../../lib/session";
-import {
-  Action,
-  Brand,
-  IconButton,
-  Label,
-  palette,
-  type,
-} from "../../components/ui";
+import { Action, type } from "../../components/ui";
+import { HandAnalysis } from "../../components/HandAnalysis";
 
 export default function Translate() {
-  const { height } = useWindowDimensions();
-  const focused = useIsFocused();
+  const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets(),
+    focused = useIsFocused();
   const {
     message,
     setMessage,
@@ -58,36 +54,49 @@ export default function Translate() {
     reducedMotion,
   } = useSession();
   const [permission, requestPermission] = useCameraPermissions();
-  const [active, setActive] = useState(false);
-  const [status, setStatus] = useState("off");
-  const [error, setError] = useState("");
+  const [active, setActive] = useState(false),
+    [status, setStatus] = useState("off"),
+    [error, setError] = useState("");
   const [models, setModels] = useState<{ cnn: string; hands: string } | null>(
     null,
   );
-  const [letter, setLetter] = useState<string | null>(null);
-  const [progress, setProgress] = useState(0);
-  const [hasHand, setHasHand] = useState(false);
-  const [engineMessage, setEngineMessage] = useState("Loading recognition…");
-  const generation = useRef(0);
-  const gate = useRef(new StabilityGate());
-  const alive = useRef(false);
+  const [letter, setLetter] = useState<string | null>(null),
+    [progress, setProgress] = useState(0);
+  const [frame, setFrame] = useState<CameraPrediction | null>(null);
+  const [engineMessage, setEngineMessage] = useState("Getting ready…");
+  const generation = useRef(0),
+    alive = useRef(false);
+  const gate = useRef(
+    new StabilityGate({
+      holdMs: 550,
+      releaseMs: 300,
+      minSamples: 3,
+      maxGapMs: 1000,
+    }),
+  );
+  const consensus = useRef(new LetterConsensus());
+  const stale = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [pulse] = useState(() => new Animated.Value(0));
+  const [fill] = useState(() => new Animated.Value(0));
   const stop = useCallback(() => {
     generation.current++;
     alive.current = false;
+    clearTimeout(stale.current);
     setActive(false);
-    setHasHand(false);
     setStatus("off");
+    setFrame(null);
     setLetter(null);
     setProgress(0);
     gate.current.reset();
-  }, []);
+    consensus.current.reset();
+    fill.setValue(0);
+  }, [fill]);
   useFocusEffect(useCallback(() => () => stop(), [stop]));
   useEffect(() => {
-    const subscription = AppState.addEventListener("change", (next) => {
-      if (next !== "active") stop();
+    const sub = AppState.addEventListener("change", (next) => {
+      if (next === "background" || (next !== "active" && alive.current)) stop();
     });
-    return () => subscription.remove();
+    return () => sub.remove();
   }, [stop]);
   const start = async () => {
     stop();
@@ -144,15 +153,24 @@ export default function Translate() {
   };
   const predict = (prediction: CameraPrediction) => {
     if (!alive.current || !focused) return;
-    const result = classify(prediction.logits);
-    setLetter(result.letter);
-    setHasHand(prediction.hasHand);
+    clearTimeout(stale.current);
+    setFrame(prediction);
+    const usable =
+      prediction.hasHand &&
+      (!prediction.quality || prediction.quality === "good");
+    const result = consensus.current.update(prediction.logits, usable);
+    setLetter(usable ? result.letter : null);
     const settled = gate.current.update(
-      result.letter,
+      result.stable,
       performance.now(),
       prediction.hasHand,
     );
     setProgress(settled.progress);
+    Animated.timing(fill, {
+      toValue: settled.progress,
+      duration: reducedMotion ? 0 : 90,
+      useNativeDriver: true,
+    }).start();
     if (settled.committed) {
       setMessage((old) => (old + settled.committed).slice(0, 1000));
       feedback("success");
@@ -163,540 +181,456 @@ export default function Translate() {
         useNativeDriver: true,
       }).start();
     }
+    stale.current = setTimeout(() => {
+      setFrame(null);
+      setLetter(null);
+      setProgress(0);
+      fill.setValue(0);
+      consensus.current.reset();
+      gate.current.update(null, performance.now(), true);
+    }, 900);
   };
   const cameraStatus = (value: CameraStatus) => {
-    if (!alive.current) return;
     if (value.state === "error") {
+      setModels(null);
       stop();
-      setError(value.message || "The camera is unavailable.");
-    } else {
+      setError(value.message || "Camera unavailable. Try again.");
+    } else if (alive.current) {
       setStatus(value.state);
       if (value.message) setEngineMessage(value.message);
     }
   };
   const live = active && focused;
+  const hasHand = !!frame?.hasHand;
+  const guidance =
+    status === "loading"
+      ? engineMessage
+      : !hasHand
+        ? "Bring one hand into view."
+        : frame?.quality === "clipped"
+          ? "Keep your whole hand in the frame."
+          : frame?.quality === "too-small"
+            ? "Move your hand a little closer."
+            : frame?.quality === "moving"
+              ? "Hold your sign steady."
+              : progress === 1
+                ? "Added. Make the next sign."
+                : letter
+                  ? `Hold ${letter} to add it.`
+                  : "Hand found. Hold an ASL letter.";
+  const open = (
+    route: "/guide" | "/settings" | "/conversation" | "/present",
+  ) => {
+    stop();
+    router.push(route);
+  };
   return (
-    <SafeAreaView style={s.page} edges={["top"]}>
-      <ScrollView
-        contentContainerStyle={s.content}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={s.header}>
-          <Brand />
-          <IconButton
-            label="Preferences"
-            onPress={() => {
-              stop();
-              router.push("/settings");
-            }}
+    <View style={s.page}>
+      {focused && <StatusBar style="light" />}
+      <ImageBackground
+        source={require("../../../assets/hand-study.png")}
+        style={StyleSheet.absoluteFill}
+        imageStyle={{ opacity: live ? 0 : 0.8 }}
+        resizeMode="cover"
+      />
+      {models && focused && (
+        <SignifyCamera
+          style={StyleSheet.absoluteFill}
+          active={live}
+          modelPath={models.cnn}
+          handModelPath={models.hands}
+          onPrediction={(event) => predict(event.nativeEvent)}
+          onStatus={(event) => cameraStatus(event.nativeEvent)}
+        />
+      )}
+      <LinearGradient
+        colors={["#14221CB0", "transparent", "#14221CDA"]}
+        locations={[0, 0.4, 1]}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      />
+      <HandAnalysis
+        frame={live ? frame : null}
+        width={width}
+        height={height}
+        reducedMotion={reducedMotion}
+      />
+      <View style={[s.header, { top: insets.top + 12 }]}>
+        <View style={s.brand}>
+          <Hand size={20} color="#EDF4E9" />
+          <Text style={s.logo}>signify.</Text>
+        </View>
+        <View style={s.headerActions}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="ASL alphabet and signing tips"
+            onPress={() => open("/guide")}
+            style={s.icon}
           >
-            <Settings2 size={19} color={palette.ink} />
-          </IconButton>
+            <BookOpen size={19} color="white" />
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Preferences"
+            onPress={() => open("/settings")}
+            style={s.icon}
+          >
+            <Settings2 size={19} color="white" />
+          </Pressable>
         </View>
-        <View style={s.intro}>
-          <Label>Your hands. Your words.</Label>
-          <Text accessibilityRole="header" style={s.title}>
-            Sign to text.
+      </View>
+      {!live && !error && (
+        <View
+          style={[s.welcome, { top: height * (height < 740 ? 0.23 : 0.3) }]}
+        >
+          <Text style={s.eyebrow}>Sign to text</Text>
+          <Text
+            accessibilityRole="header"
+            style={[s.title, height < 740 && { fontSize: 38, lineHeight: 43 }]}
+            maxFontSizeMultiplier={1.2}
+          >
+            Your hands,{"\n"}into words.
           </Text>
-          <Text style={s.subtitle}>
-            Spell a message with ASL. Speak it or show it.
+          <Text style={s.description}>
+            Hold an ASL letter. Build a message.{"\n"}Speak it, or let someone
+            read it.
           </Text>
         </View>
-        <View style={[s.camera, { minHeight: height < 740 ? 285 : 335 }]}>
-          <ImageBackground
-            source={require("../../../assets/hand-study.png")}
-            style={StyleSheet.absoluteFill}
-            imageStyle={{ opacity: live ? 0 : 1 }}
-            resizeMode="cover"
-          />
-          {live && models && (
-            <SignifyCamera
-              key={models.cnn}
-              style={StyleSheet.absoluteFill}
-              active={live}
-              modelPath={models.cnn}
-              handModelPath={models.hands}
-              onPrediction={(e) => predict(e.nativeEvent)}
-              onStatus={(e) => cameraStatus(e.nativeEvent)}
-            />
-          )}
-          <LinearGradient
-            colors={["#172B2110", "transparent", "#172B21C0"]}
-            locations={[0, 0.4, 1]}
-            style={StyleSheet.absoluteFill}
-            pointerEvents="none"
-          />
-          <View style={s.cameraTop}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="About ASL fingerspelling"
-              onPress={() => {
-                stop();
-                router.push("/guide");
-              }}
-              style={s.glassPill}
-            >
-              <Hand size={13} color="white" />
-              <Text style={s.pillText}>ASL fingerspelling</Text>
-            </Pressable>
-            <View style={[s.glassPill, { backgroundColor: "#22332BCD" }]}>
-              <View
-                style={[
-                  s.dot,
-                  { backgroundColor: live ? "#B1D9AD" : "#DCE6DA" },
-                ]}
-              />
-              <Text style={s.pillText}>
-                {status === "loading"
-                  ? "Getting ready"
-                  : live
-                    ? "Recognizing"
-                    : "Camera off"}
-              </Text>
-            </View>
-          </View>
-          <View pointerEvents="none" style={s.frame}>
-            <View style={[s.corner, s.topLeft]} />
-            <View style={[s.corner, s.topRight]} />
-            <View style={[s.corner, s.bottomLeft]} />
-            <View style={[s.corner, s.bottomRight]} />
-          </View>
-          {live && status !== "loading" && (
-            <BlurView intensity={45} tint="light" style={s.letterBubble}>
-              <Text style={s.letterLabel}>Suggested letter</Text>
-              <Text style={s.letter}>{letter || "—"}</Text>
-              <View
-                accessibilityRole="progressbar"
-                accessibilityLabel="Letter hold progress"
-                accessibilityValue={{
-                  min: 0,
-                  max: 100,
-                  now: Math.round(progress * 100),
-                }}
-                style={s.progress}
-              >
-                <View
-                  style={{
-                    width: `${progress * 100}%`,
-                    height: 3,
-                    backgroundColor: palette.sage,
-                  }}
-                />
-              </View>
-              <Text style={s.letterLabel}>
-                {progress === 1 ? "Added ✓" : "Hold to add"}
-              </Text>
-            </BlurView>
-          )}
-          <View style={s.cameraBottom}>
-            {error ? (
-              <View style={s.error}>
-                <Text style={s.errorText}>{error}</Text>
-                {permission &&
-                  !permission.canAskAgain &&
-                  !permission.granted && (
-                    <Action
-                      title="Open Settings"
-                      secondary
-                      onPress={() => void Linking.openSettings()}
-                    />
-                  )}
-              </View>
-            ) : !live && status === "off" ? (
-              <View style={s.welcome}>
-                <Text style={s.welcomeTitle}>
-                  Make a sign.{"\n"}Make a connection.
-                </Text>
-                <Text style={s.welcomeDetail}>
-                  Start the camera. Hold one ASL letter until it’s added to your
-                  message.
-                </Text>
-              </View>
-            ) : (
-              <Text accessibilityLiveRegion="polite" style={s.guidance}>
-                {status === "loading"
-                  ? engineMessage
-                  : !hasHand
-                    ? "Bring one hand into the frame, with your palm facing the camera."
-                    : letter
-                      ? progress === 1
-                        ? "Letter added. Make the next sign, or lower your hand to repeat."
-                        : `Hold ${letter} steady until the bar fills.`
-                      : "Hand found. Use an ASL letter and hold it steady in even light."}
-              </Text>
-            )}
-            <BlurView intensity={45} tint="light" style={s.dock}>
-              <View style={s.private}>
-                <ShieldCheck size={15} color="white" />
-                <Text style={s.privateText}>Only on{"\n"}your device</Text>
-              </View>
-              <Action
-                testID="camera-toggle"
-                title={
-                  active
-                    ? "Stop translating"
-                    : status === "loading"
-                      ? "Cancel"
-                      : "Start translating"
-                }
-                icon={
-                  active ? (
-                    <Square size={16} color="white" />
-                  ) : (
-                    <Camera size={17} color="white" />
-                  )
-                }
-                onPress={active || status === "loading" ? stop : start}
-                style={{ minHeight: 49, paddingHorizontal: 18 }}
-              />
-            </BlurView>
-          </View>
-          <Animated.View
-            pointerEvents="none"
+      )}
+      {live && (
+        <View style={[s.liveLabel, { top: insets.top + 76 }]}>
+          <View
             style={[
-              StyleSheet.absoluteFill,
-              s.captureFlash,
-              { opacity: pulse },
+              s.dot,
+              { backgroundColor: hasHand ? "#CAE5BC" : "#EDF3E7" },
             ]}
           />
+          <Text style={s.liveText}>
+            {status === "loading"
+              ? "Getting ready"
+              : hasHand
+                ? "Hand tracked"
+                : "Looking for your hand"}
+          </Text>
         </View>
-        <View
+      )}
+      {live && letter && (
+        <BlurView
+          intensity={35}
+          tint="dark"
+          style={[s.letterBubble, { top: height * 0.34 }]}
+        >
+          <Text style={s.letter}>{letter}</Text>
+          <View
+            accessibilityRole="progressbar"
+            accessibilityLabel="Letter capture progress"
+            accessibilityValue={{
+              min: 0,
+              max: 100,
+              now: Math.round(progress * 100),
+            }}
+            style={s.track}
+          >
+            <Animated.View
+              style={[s.fill, { transform: [{ scaleX: fill }] }]}
+            />
+          </View>
+          <Text style={s.letterCaption}>
+            {progress === 1 ? "Added ✓" : "Hold steady"}
+          </Text>
+        </BlurView>
+      )}
+      <View style={[s.bottom, { bottom: Math.max(insets.bottom, 16) + 80 }]}>
+        {error ? (
+          <View style={s.error}>
+            <Text accessibilityLiveRegion="polite" style={s.description}>
+              {error}
+            </Text>
+            {permission && !permission.canAskAgain && !permission.granted && (
+              <Action
+                title="Allow camera in Settings"
+                onPress={() => void Linking.openSettings()}
+                secondary
+              />
+            )}
+          </View>
+        ) : live ? (
+          <Text accessibilityLiveRegion="polite" style={s.guidance}>
+            {guidance}
+          </Text>
+        ) : null}
+        <BlurView
+          intensity={55}
+          tint="dark"
           style={[
-            s.messageCard,
-            preferences.highContrast && { borderColor: palette.ink },
+            s.composer,
+            preferences.highContrast && { borderColor: "white" },
           ]}
         >
-          <View style={{ flex: 1 }}>
-            <Label>Your message</Label>
-            <Text
-              numberOfLines={2}
-              accessibilityLiveRegion="polite"
-              style={[s.message, preferences.largeText && { fontSize: 25 }]}
+          <View style={s.messageHeader}>
+            <Text style={s.eyebrow}>Your message</Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Edit message"
+              style={s.edit}
+              onPress={() => open("/conversation")}
             >
-              {message || "Your signed letters will appear here."}
-            </Text>
+              <Pencil size={17} color="white" />
+              <Text style={s.controlText}>Edit</Text>
+            </Pressable>
           </View>
-          <IconButton
-            label="Edit message"
-            onPress={() => {
-              stop();
-              router.push("/conversation");
-            }}
+          <Text
+            accessibilityLiveRegion="polite"
+            numberOfLines={2}
+            style={[s.message, preferences.largeText && { fontSize: 25 }]}
           >
-            <Pencil size={20} color={palette.ink} />
-          </IconButton>
-        </View>
-        <View style={s.quickControls}>
-          <Pressable
-            accessibilityRole="button"
-            disabled={!message}
-            onPress={() => setMessage((old) => (old + " ").slice(0, 1000))}
-            style={s.smallControl}
-          >
-            <Text style={[s.controlText, !message && { opacity: 0.45 }]}>
-              Space ␣
-            </Text>
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            disabled={!message}
-            onPress={() => setMessage((old) => old.slice(0, -1))}
-            style={s.smallControl}
-          >
-            <Text style={[s.controlText, !message && { opacity: 0.45 }]}>
-              Delete
-            </Text>
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Show message full screen"
-            disabled={!message.trim()}
-            onPress={() => {
-              stop();
-              router.push("/present");
-            }}
-            style={s.smallControl}
-          >
-            <Maximize2
-              size={16}
-              color={!message.trim() ? palette.muted : palette.ink}
-            />
-            <Text style={[s.controlText, !message.trim() && { opacity: 0.45 }]}>
-              Show
-            </Text>
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={speaking ? "Stop speaking" : "Speak message"}
-            disabled={!message.trim()}
-            onPress={speak}
-            style={[
-              s.smallControl,
-              { marginLeft: "auto", flexDirection: "row", gap: 6 },
-            ]}
-          >
-            <Volume2 size={15} color={palette.ink} />
-            <Text style={[s.controlText, !message && { opacity: 0.45 }]}>
-              {speaking ? "Stop" : "Speak"}
-            </Text>
-          </Pressable>
-        </View>
-        <View style={s.scope}>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => {
-              stop();
-              router.push("/guide");
-            }}
-            style={s.scopeLink}
-          >
-            <Info size={12} color={palette.muted} />
-            <Text style={s.scopeText}>
-              ASL letters A–Y, except J. Type J & Z. Review before sharing.
-            </Text>
-          </Pressable>
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+            {message || "Your signed letters appear here."}
+          </Text>
+          <View style={s.controls}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Add a space"
+              disabled={!message}
+              onPress={() => {
+                setMessage((old) => (old + " ").slice(0, 1000));
+                feedback();
+              }}
+              style={s.control}
+            >
+              <Text style={[s.controlText, !message && s.disabled]}>Space</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Delete last letter"
+              disabled={!message}
+              onPress={() => {
+                setMessage((old) => old.slice(0, -1));
+                feedback();
+              }}
+              style={s.control}
+            >
+              <Delete size={17} color={!message ? "#FFFFFF66" : "white"} />
+            </Pressable>
+            <View style={{ flex: 1 }} />
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Show message full screen"
+              disabled={!message.trim()}
+              onPress={() => open("/present")}
+              style={s.control}
+            >
+              <Maximize2
+                size={16}
+                color={!message.trim() ? "#FFFFFF66" : "white"}
+              />
+              <Text style={[s.controlText, !message.trim() && s.disabled]}>
+                Show
+              </Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={speaking ? "Stop speaking" : "Speak message"}
+              disabled={!message.trim()}
+              onPress={speak}
+              style={s.control}
+            >
+              <Volume2
+                size={17}
+                color={!message.trim() ? "#FFFFFF66" : "white"}
+              />
+              <Text style={[s.controlText, !message.trim() && s.disabled]}>
+                {speaking ? "Stop" : "Speak"}
+              </Text>
+            </Pressable>
+          </View>
+          <Action
+            testID="camera-toggle"
+            title={
+              active
+                ? "Pause camera"
+                : status === "loading"
+                  ? "Cancel"
+                  : "Start translating"
+            }
+            onPress={active || status === "loading" ? stop : start}
+            icon={
+              active ? (
+                <Square size={15} color="white" />
+              ) : (
+                <Camera size={18} color="white" />
+              )
+            }
+            style={s.cameraButton}
+          />
+        </BlurView>
+        {!live && (
+          <Text style={s.scope}>
+            24 static ASL letters · type J and Z · review before sharing
+          </Text>
+        )}
+      </View>
+      <Animated.View
+        pointerEvents="none"
+        style={[StyleSheet.absoluteFill, s.confirmation, { opacity: pulse }]}
+      />
+    </View>
   );
 }
 const s = StyleSheet.create({
-  page: {
-    flex: 1,
-    backgroundColor: palette.background,
-  },
-  content: {
-    flexGrow: 1,
-    paddingHorizontal: 20,
-    paddingBottom: 109,
-  },
+  page: { flex: 1, backgroundColor: "#16241C" },
   header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingTop: 9,
-    paddingBottom: 20,
-  },
-  intro: { gap: 5, paddingBottom: 22 },
-  subtitle: {
-    fontFamily: type.regular,
-    fontSize: 13,
-    lineHeight: 20,
-    color: palette.muted,
-  },
-  title: {
-    fontFamily: type.medium,
-    fontSize: 32,
-    letterSpacing: -1.8,
-    lineHeight: 41,
-    color: palette.ink,
-  },
-  camera: {
-    flex: 1,
-    borderRadius: 28,
-    overflow: "hidden",
-    backgroundColor: "#A7AEA8",
-  },
-  cameraTop: {
     position: "absolute",
-    left: 16,
-    right: 16,
-    top: 17,
+    left: 23,
+    right: 18,
     flexDirection: "row",
+    alignItems: "center",
     justifyContent: "space-between",
   },
-  glassPill: {
-    paddingHorizontal: 10,
-    paddingVertical: 9,
-    backgroundColor: "#34453BDD",
+  brand: { flexDirection: "row", alignItems: "center", gap: 10 },
+  logo: {
+    fontFamily: type.semi,
+    fontSize: 26,
+    letterSpacing: -1.4,
+    color: "#F3F6EF",
+  },
+  headerActions: { flexDirection: "row", gap: 8 },
+  icon: {
+    height: 44,
+    width: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#20332955",
     borderWidth: 1,
     borderColor: "#FFFFFF35",
-    borderRadius: 22,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
   },
-  pillText: { color: "white", fontFamily: type.medium, fontSize: 10 },
-  dot: { width: 5, height: 5, borderRadius: 5 },
-  frame: {
-    position: "absolute",
-    top: "22%",
-    left: "22%",
-    right: "22%",
-    bottom: "28%",
-  },
-  corner: {
-    position: "absolute",
-    width: 20,
-    height: 20,
-    borderColor: "#FFFFFF9B",
-  },
-  topLeft: {
-    left: 0,
-    top: 0,
-    borderLeftWidth: 1,
-    borderTopWidth: 1,
-    borderTopLeftRadius: 11,
-  },
-  topRight: {
-    right: 0,
-    top: 0,
-    borderRightWidth: 1,
-    borderTopWidth: 1,
-    borderTopRightRadius: 11,
-  },
-  bottomLeft: {
-    left: 0,
-    bottom: 0,
-    borderLeftWidth: 1,
-    borderBottomWidth: 1,
-    borderBottomLeftRadius: 11,
-  },
-  bottomRight: {
-    right: 0,
-    bottom: 0,
-    borderRightWidth: 1,
-    borderBottomWidth: 1,
-    borderBottomRightRadius: 11,
-  },
-  cameraBottom: {
-    position: "absolute",
-    left: 13,
-    right: 13,
-    bottom: 13,
-    gap: 18,
-  },
-  welcome: { paddingHorizontal: 9, gap: 10 },
-  welcomeTitle: {
+  welcome: { position: "absolute", left: 28, right: 24, gap: 13 },
+  eyebrow: { fontFamily: type.medium, fontSize: 12, color: "#E6EEDC" },
+  title: {
     fontFamily: type.regular,
-    fontSize: 31,
-    letterSpacing: -1.8,
-    lineHeight: 35,
+    fontSize: 46,
+    lineHeight: 50,
+    letterSpacing: -2.4,
     color: "white",
   },
-  welcomeDetail: {
+  description: {
     fontFamily: type.regular,
-    fontSize: 12,
-    lineHeight: 18,
-    color: "#EDF3E7",
+    fontSize: 14,
+    lineHeight: 23,
+    color: "#EDF2E9",
   },
-  dock: {
-    borderRadius: 20,
-    padding: 8,
-    borderWidth: 1,
-    borderColor: "#FFFFFF55",
-    overflow: "hidden",
-    backgroundColor: "#FFFFFF27",
+  liveLabel: {
+    position: "absolute",
+    left: 24,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    gap: 8,
+    backgroundColor: "#20312999",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 24,
   },
-  private: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 7,
-    paddingLeft: 7,
-  },
-  privateText: {
-    fontFamily: type.medium,
-    fontSize: 9,
-    color: "white",
-    lineHeight: 14,
-  },
+  dot: { width: 6, height: 6, borderRadius: 3 },
+  liveText: { fontFamily: type.medium, fontSize: 11, color: "#EEF4E9" },
   letterBubble: {
     position: "absolute",
-    right: 16,
-    top: 72,
-    borderRadius: 22,
-    padding: 14,
-    minWidth: 109,
+    right: 22,
+    borderRadius: 27,
+    padding: 17,
+    minWidth: 100,
     overflow: "hidden",
-    backgroundColor: "#EDF0EAD0",
-    borderWidth: 1,
-    borderColor: "#FFFFFF88",
     alignItems: "center",
-    gap: 5,
+    gap: 9,
+    backgroundColor: "#C5D4C020",
+    borderWidth: 1,
+    borderColor: "#FFFFFF55",
   },
-  letterLabel: { fontFamily: type.medium, fontSize: 9, color: palette.ink },
   letter: {
     fontFamily: type.regular,
-    fontSize: 53,
-    lineHeight: 65,
-    color: palette.ink,
+    fontSize: 61,
+    lineHeight: 70,
+    color: "white",
   },
-  progress: {
-    width: 75,
+  letterCaption: { fontFamily: type.medium, fontSize: 10, color: "#EDF3E7" },
+  track: {
+    width: 66,
     height: 3,
-    backgroundColor: "#546B4430",
+    backgroundColor: "#FFFFFF30",
     borderRadius: 3,
     overflow: "hidden",
-    marginBottom: 4,
   },
+  fill: {
+    width: 66,
+    height: 3,
+    backgroundColor: "#C9E4BD",
+    transformOrigin: "left center",
+  },
+  bottom: { position: "absolute", left: 18, right: 18, gap: 10 },
   guidance: {
     fontFamily: type.medium,
     fontSize: 13,
     lineHeight: 20,
     color: "white",
-    backgroundColor: "#203129D9",
-    padding: 13,
-    borderRadius: 14,
+    textAlign: "center",
+    backgroundColor: "#20332990",
+    borderRadius: 18,
+    paddingVertical: 9,
+    paddingHorizontal: 14,
   },
-  error: {
-    backgroundColor: "#F0F4EBF2",
-    padding: 16,
-    gap: 12,
-    borderRadius: 16,
-  },
-  errorText: {
-    fontFamily: type.medium,
-    fontSize: 12,
-    lineHeight: 20,
-    color: palette.ink,
-  },
-  captureFlash: { borderWidth: 4, borderColor: "#D4E9CA", borderRadius: 28 },
-  messageCard: {
-    marginTop: 14,
-    paddingVertical: 13,
+  composer: {
+    borderRadius: 26,
+    overflow: "hidden",
     paddingHorizontal: 16,
-    borderRadius: 21,
-    backgroundColor: palette.paper,
+    paddingVertical: 11,
+    backgroundColor: "#20322966",
+    borderColor: "#FFFFFF50",
     borderWidth: 1,
-    borderColor: "#FFFFFF",
+  },
+  messageHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  edit: {
+    minHeight: 40,
     flexDirection: "row",
     alignItems: "center",
     gap: 7,
-    minHeight: 87,
+    paddingLeft: 13,
   },
   message: {
     fontFamily: type.medium,
-    fontSize: 17,
-    letterSpacing: -0.4,
-    lineHeight: 23,
-    color: palette.ink,
-    marginTop: 3,
+    fontSize: 20,
+    lineHeight: 27,
+    letterSpacing: -0.5,
+    color: "white",
+    paddingBottom: 7,
   },
-  quickControls: { flexDirection: "row", gap: 3, paddingTop: 2 },
-  smallControl: {
-    paddingHorizontal: 12,
-    justifyContent: "center",
-    alignItems: "center",
+  controls: { flexDirection: "row", alignItems: "center", gap: 2 },
+  control: {
     minHeight: 44,
+    minWidth: 44,
+    paddingHorizontal: 7,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
   },
-  controlText: { fontFamily: type.medium, fontSize: 11, color: palette.ink },
+  controlText: { fontFamily: type.medium, fontSize: 12, color: "white" },
+  disabled: { opacity: 0.4 },
+  cameraButton: { minHeight: 46, backgroundColor: "#56725E", marginTop: 3 },
   scope: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 3,
+    fontFamily: type.regular,
+    fontSize: 10,
+    lineHeight: 15,
+    color: "#D9E4D4",
+    textAlign: "center",
   },
-  scopeLink: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    minHeight: 30,
+  error: {
+    backgroundColor: "#203329DA",
+    borderRadius: 21,
+    padding: 16,
+    gap: 10,
   },
-  scopeText: { fontFamily: type.regular, fontSize: 10, color: palette.muted },
-  demo: { paddingLeft: 10, minHeight: 30, justifyContent: "center" },
-  demoText: { fontFamily: type.semi, fontSize: 10, color: palette.muted },
+  confirmation: { borderWidth: 3, borderColor: "#D5E9C9" },
 });

@@ -11,6 +11,10 @@ export type CameraPrediction = {
   landmarks?: { x: number; y: number; z: number }[];
   width?: number;
   height?: number;
+  motion?: number;
+  quality?: "good" | "moving" | "clipped" | "too-small" | "no-hand";
+  detectorMs?: number;
+  cnnMs?: number;
 };
 export type CameraStatus = {
   state: "loading" | "live" | "error";
@@ -22,6 +26,9 @@ export type Props = ViewProps & {
   handModelPath: string;
   onPrediction: (event: { nativeEvent: CameraPrediction }) => void;
   onStatus: (event: { nativeEvent: CameraStatus }) => void;
+  onAnalysis?: (event: {
+    nativeEvent: { phase: "tracking" | "classifying" };
+  }) => void;
 };
 export const hasNativeRecognition =
   !!requireOptionalNativeModule("SignifyCamera");

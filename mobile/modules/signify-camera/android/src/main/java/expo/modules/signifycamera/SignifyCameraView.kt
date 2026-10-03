@@ -123,7 +123,7 @@ class SignifyCameraView(context: Context, private val nativeContext: AppContext)
   private fun analyze(image: ImageProxy) {
     val started = SystemClock.uptimeMillis()
     try {
-      if (!active || started - lastFrame < 130) return
+      if (!active || started - lastFrame < 83) return
       lastFrame = started
       val model = session ?: return
       val detector = handDetector ?: return
@@ -155,7 +155,7 @@ class SignifyCameraView(context: Context, private val nativeContext: AppContext)
             val tensor = outputs[0] as OnnxTensor
             val buffer = tensor.floatBuffer
             val logits = FloatArray(buffer.remaining()); buffer.get(logits)
-            prediction(logits.map { it.toDouble() }, true, started)
+            prediction(logits.map { it.toDouble() }, true, started, hand.map { mapOf("x" to it.x().toDouble(), "y" to it.y().toDouble(), "z" to it.z().toDouble()) }, bitmap.width, bitmap.height)
           }
         }
       } finally { if (bitmap !== raw) bitmap.recycle(); raw.recycle() }
@@ -171,9 +171,9 @@ class SignifyCameraView(context: Context, private val nativeContext: AppContext)
     }
   }
   private fun status(state: String, message: String = "") { post { onStatus(mapOf("state" to state, "message" to message)) } }
-  private fun prediction(logits: List<Double>, hasHand: Boolean, started: Long) {
+  private fun prediction(logits: List<Double>, hasHand: Boolean, started: Long, landmarks: List<Map<String, Double>> = emptyList(), width: Int = 0, height: Int = 0) {
     val duration = SystemClock.uptimeMillis() - started
-    post { if (active) onPrediction(mapOf("logits" to logits, "hasHand" to hasHand, "latencyMs" to duration)) }
+    post { if (active) onPrediction(mapOf("logits" to logits, "hasHand" to hasHand, "latencyMs" to duration, "landmarks" to landmarks, "width" to width, "height" to height)) }
   }
   private fun fail(message: String) { active = false; stop(); status("error", message) }
 }

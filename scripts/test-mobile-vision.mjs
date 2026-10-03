@@ -1,6 +1,7 @@
 import { chromium, webkit } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import assert from "node:assert/strict";
+import { processorHtml } from "../mobile/vision/document.mjs";
 const resources = {
   mpLoader: "mobile/assets/vision/mp-loader.cvdata",
   mpWasm: "mobile/assets/vision/mp-wasm.cvdata",
@@ -33,9 +34,10 @@ for (const [name, launcher] of [
     });
     page.on("pageerror", (e) => console.error(name, "page error:", e.message));
     await page.setContent(
-      `<!doctype html><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' blob:; img-src data: blob:; connect-src blob:; worker-src blob:"><script>window.events=[];window.ReactNativeWebView={postMessage:m=>events.push(JSON.parse(m))};</script>`,
+      processorHtml(
+        `window.events=[];window.ReactNativeWebView={postMessage:m=>events.push(JSON.parse(m))};${source}`,
+      ),
     );
-    await page.addScriptTag({ content: source });
     for (const [key, path] of Object.entries(resources)) {
       const data = (await readFile(path)).toString("base64");
       await page.evaluate(
@@ -100,6 +102,106 @@ for (const [name, launcher] of [
         hand.logits.length === 25 &&
         hand.logits.every(Number.isFinite),
       JSON.stringify(events),
+    );
+    // Exercise continuous video rather than just still-image inference.
+    await page.evaluate(async (base64) => {
+      const image = new Image();
+      image.src = "data:image/png;base64," + base64;
+      await image.decode();
+      const canvas = document.createElement("canvas");
+      canvas.width = 480;
+      canvas.height = Math.round(
+        (image.naturalHeight * 480) / image.naturalWidth,
+      );
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+      window.makeStream = () => {
+        const stream = canvas.captureStream(30);
+        window.testTracks = stream.getTracks();
+        return stream;
+      };
+      Object.defineProperty(navigator, "mediaDevices", {
+        configurable: true,
+        value: { getUserMedia: async () => window.makeStream() },
+      });
+      window.startPainting = () => {
+        window.paint = setInterval(
+          () => ctx.drawImage(image, 0, 0, canvas.width, canvas.height),
+          33,
+        );
+      };
+      window.startPainting();
+      await window.SignifyVision.receive({ type: "stream" });
+    }, photo.toString("base64"));
+    await page.waitForFunction(
+      () =>
+        window.events.filter(
+          (e) => e.type === "prediction" && e.id === undefined,
+        ).length >= 8,
+      {},
+      { timeout: 20000 },
+    );
+    const streaming = await page.evaluate(() =>
+      window.events.filter(
+        (e) => e.type === "prediction" && e.id === undefined,
+      ),
+    );
+    assert(
+      streaming.some((p) => p.hasHand && p.logits.length === 25),
+      "Continuous frames must reach the actual CNN",
+    );
+    const median = streaming.map((p) => p.latencyMs).sort((a, b) => a - b)[
+      Math.floor(streaming.length / 2)
+    ];
+    const cnnMedian = streaming.map((p) => p.cnnMs).sort((a, b) => a - b)[
+      Math.floor(streaming.length / 2)
+    ];
+    await page.evaluate(async () => {
+      await window.SignifyVision.receive({ type: "pause" });
+      clearInterval(window.paint);
+    });
+    const pausedCount = await page.evaluate(
+      () => window.events.filter((e) => e.type === "prediction").length,
+    );
+    await page.waitForTimeout(400);
+    assert.equal(
+      await page.evaluate(
+        () => window.events.filter((e) => e.type === "prediction").length,
+      ),
+      pausedCount,
+      "No predictions may escape after pause",
+    );
+    assert(
+      await page.evaluate(() =>
+        window.testTracks.every((t) => t.readyState === "ended"),
+      ),
+      "Pause must stop camera tracks",
+    );
+    // Restart the same initialized models and verify fresh results resume.
+    await page.evaluate(async () => {
+      window.startPainting();
+      await window.SignifyVision.receive({ type: "stream" });
+    });
+    await page.waitForFunction(
+      (count) =>
+        window.events.filter((e) => e.type === "prediction").length >=
+        count + 3,
+      pausedCount,
+      { timeout: 10000 },
+    );
+    assert.equal(
+      await page.evaluate(
+        () => window.events.filter((e) => e.type === "ready").length,
+      ),
+      1,
+      "Resume must reuse initialized models",
+    );
+    await page.evaluate(async () => {
+      await window.SignifyVision.receive({ type: "pause" });
+      clearInterval(window.paint);
+    });
+    console.log(
+      `${name}: continuous video median processing ${Math.round(median)} ms, CNN ${Math.round(cnnMedian)} ms; pause stops tracks and predictions`,
     );
     assert.equal(
       requests.length,

@@ -34,3 +34,14 @@ The actual packaged processor passed integration checks in Chromium and WebKit: 
 ## Session startup fix
 
 The session context, state hook, provider component, and consumer hook now live in separate modules, preserving context identity when the provider refreshes. A local `mobile/index.js` entry loads Expo Router. Three regression tests verify nested consumers, a re-evaluated provider module, and the missing-provider guard. Mobile lint and TypeScript passed. Expo Go was cold-started in the iOS 26 simulator after clearing Metro: the translation screen opened, message editing and full-screen presentation shared session state, and a provider Fast Refresh kept the active message without a crash. Camera startup in Expo Go loaded the on-device hand tracker and CNN, reached Recognizing, and stopped cleanly. Simulator frames cannot validate signing accuracy or physical camera performance.
+
+## Full-screen camera and continuous inference update
+
+The camera now fills the translation screen behind floating native controls. Expo Go uses continuous local video inference with a snapshot fallback, retains initialized models on pause, and closes camera tracks when paused. Actual hand joints drive the analysis overlay. Crop/motion rejection, recent-prediction agreement, and minimum sample counts supplement the unchanged CNN.
+
+- Root unit tests: 11 passed, including consensus, stale gaps, uncertainty, capture, and physical release. Browser regression checks: 14 passed. Mobile lint, TypeScript, and production iOS/Android JavaScript export passed.
+- Packaged Chromium and WebKit integration: real hand tracking and CNN inference on continuous synthetic video, no network requests, pause cancellation, and warm resume passed. Desktop continuous-frame processing medians were approximately 20–39 ms; these are integration measurements, not phone benchmarks.
+- Expo Go in the iOS 26 simulator: continuous camera startup succeeded; observed processing medians were 53–68 ms. The simulator cannot evaluate physical signing accuracy.
+- Native iOS Debug simulator build and Android Debug arm64 APK compilation passed with the updated joint payload and 83 ms sample interval.
+
+Physical-device accuracy, latency, battery use, and tactile feedback remain unevaluated. The model weights are unchanged; the faster camera pipeline and capture safeguards do not establish a new recognition-accuracy score.
